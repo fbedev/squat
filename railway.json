@@ -8,7 +8,11 @@
     "nixpacksPlan": {
       "phases": {
         "setup": {
-          "aptPkgs": ["ffmpeg", "libglib2.0-0"]   // ffmpeg for video decode, glib for mediapipe
+          "aptPkgs": [
+            "ffmpeg",        // video decode
+            "libglib2.0-0",  // mediapipe runtime
+            "libgl1"         // 🟢 provides libGL.so.1, fixes your ImportError
+          ]
         }
       }
     }
