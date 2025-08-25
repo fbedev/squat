@@ -1,24 +1,26 @@
-{
-  "$schema": "https://schema.up.railway.app/railway.schema.json",
-  "build": {
-    "builder": "NIXPACKS",
-    "env": {
-      "PYTHON_VERSION": "3.11.8"
-    },
-    "nixpacksPlan": {
-      "phases": {
-        "setup": {
-          "aptPkgs": [
-            "ffmpeg",
-            "libglib2.0-0",
-            "libgl1"
-          ]
-        }
+"build": {
+  "builder": "NIXPACKS",
+  "env": {
+    "PYTHON_VERSION": "3.11.8",
+    "PIP_NO_CACHE_DIR": "1"
+  },
+  "nixpacksPlan": {
+    "phases": {
+      "setup": {
+        "aptPkgs": [
+          "ffmpeg",
+          "libglib2.0-0",
+          "libgl1"
+        ]
+      },
+      "build": {
+        "commands": [
+          "python -m pip install --upgrade pip",
+          "pip uninstall -y opencv-python opencv-contrib-python opencv-python-headless opencv-contrib-python-headless || true",
+          "pip install --no-cache-dir opencv-python-headless==4.12.0.88",
+          "pip install --no-cache-dir -r requirements.txt"
+        ]
       }
     }
-  },
-  "deploy": {
-    "startCommand": "streamlit run main.py --server.address 0.0.0.0 --server.port $PORT",
-    "restartPolicy": "on-failure"
   }
 }
