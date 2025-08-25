@@ -1,0 +1,7 @@
+streamlit
+streamlit-webrtc
+opencv-python
+av
+numpy
+mediapipe==0.10.14
+sounddevice
