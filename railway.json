@@ -9,7 +9,7 @@
     "nixpacksPlan": {
       "phases": {
         "setup": {
-          "nixPkgs": ["python311", "gcc", "alsa-lib", "ffmpeg", "libgl1", "libglib2.0"],
+          "nixPkgs": ["python311", "gcc", "alsa-lib", "ffmpeg", "mesa", "glib", "protobuf"],
           "aptPkgs": ["libasound2", "ffmpeg", "libgl1-mesa-glx", "libglib2.0-0"]
         },
         "build": {
