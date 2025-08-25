@@ -1,3 +1,12 @@
+import cv2, pkg_resources
+print(">>> CV2 version:", cv2.__version__)
+try:
+    dist = pkg_resources.get_distribution("opencv-python-headless")
+    print(">>> Loaded from:", dist)
+except Exception as e:
+    print(">>> opencv-python-headless not found!", e)
+
+
 # app.py
 # ---------------------------------------------------------------
 # Squat posture live analyzer — Streamlit + OpenCV (cv2) + MediaPipe
