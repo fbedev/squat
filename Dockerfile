@@ -17,7 +17,7 @@ EXPOSE 8080
 CMD bash -lc 'unset STREAMLIT_SERVER_PORT; \
   streamlit run main.py \
   --server.address=0.0.0.0 \
-  --server.port=${PORT:-8080} \
+  --server.port=8080
   --server.fileWatcherType=none \
   --browser.gatherUsageStats=false \
   --client.showErrorDetails=false \
