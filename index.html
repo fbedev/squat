@@ -1,554 +1,265 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squat Posture Live Analyzer</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-        }
-        .video-container {
-            position: relative;
-            width: 100%;
-            max-width: 100%;
-            height: calc(100vh - 100px);
-        }
-        video, canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border: 2px solid #333;
-        }
-        #output_canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        #instructions {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            text-align: center;
-            padding: 10px;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            font-size: 1.5em;
-            border: 3px solid;
-        }
-        #fullscreen-btn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            background-color: #333;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 1em;
-        }
-        #fullscreen-btn:hover {
-            background-color: #555;
-        }
-    </style>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1"
+  />
+  <title>Squat 90° — Fullscreen Web</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      height: 100%; width: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none;
+      -webkit-user-select: none; user-select: none;
+    }
+    #wrap { position: fixed; inset: 0; }
+    video, canvas {
+      position: absolute; inset: 0;
+      width: 100vw; height: 100vh;
+      object-fit: cover;
+    }
+    /* keep overlays crisp on mobile */
+    canvas { image-rendering: optimizeSpeed; }
+  </style>
 </head>
 <body>
-    <div class="video-container">
-        <video id="webcam" autoplay playsinline></video>
-        <canvas id="output_canvas"></canvas>
-        <div id="instructions">Starting... | Squat to 90° (like sitting on a chair) | Place camera ~3–4m away, hip height, left side facing camera</div>
-        <button id="fullscreen-btn">Toggle Fullscreen</button>
-    </div>
+  <div id="wrap">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="overlay"></canvas>
+  </div>
 
-    <script>
-        // Utility Functions
-        const toXY = (landmark, w, h) => [landmark.x * w, landmark.y * h];
+  <!-- MediaPipe (classic solutions) via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675469404/camera_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675469404/drawing_utils.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
 
-        const angleABC = (a, b, c) => {
-            const BA = [a[0] - b[0], a[1] - b[1]];
-            const BC = [c[0] - b[0], c[1] - b[1]];
-            const normBA = Math.sqrt(BA[0] ** 2 + BA[1] ** 2) || 1e-9;
-            const normBC = Math.sqrt(BC[0] ** 2 + BC[1] ** 2) || 1e-9;
-            const cosang = Math.min(1, Math.max(-1, (BA[0] * BC[0] + BA[1] * BC[1]) / (normBA * normBC)));
-            return Math.acos(cosang) * 180 / Math.PI;
-        };
+  <script>
+  (async () => {
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('overlay');
+    const ctx = canvas.getContext('2d');
 
-        const beep = (kind = "low") => {
-            const ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const freq = kind === "low" ? 650 : 880;
-            const dur = kind === "low" ? 0.08 : 0.12;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = "sine";
-            osc.frequency.setValueAtTime(freq, ctx.currentTime);
-            gain.gain.setValueAtTime(0.2, ctx.currentTime);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + dur);
-        };
+    // ====== layout ======
+    function resize() {
+      const w = window.innerWidth, h = window.innerHeight;
+      canvas.width = w; canvas.height = h;
+    }
+    window.addEventListener('resize', resize);
+    resize();
 
-        // Squat Processor Class
-        class SquatProcessor {
-            constructor() {
-                this.pose = new Pose({
-                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-                });
-                this.pose.setOptions({
-                    modelComplexity: 1,
-                    smoothLandmarks: true,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                this.pose.onResults(this.onResults.bind(this));
-                this.initializeElements();
-                this.initializeState();
-                this.setupEventListeners();
-            }
+    // ====== camera (rear by default) ======
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 30 }
+          },
+          audio: false
+        });
+        video.srcObject = stream;
+        await video.play().catch(()=>{});
+      } catch (e) {
+        // fallback to any camera
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = stream;
+        await video.play().catch(()=>{});
+      }
+    }
 
-            initializeElements() {
-                this.video = document.getElementById("webcam");
-                this.canvas = document.getElementById("output_canvas");
-                this.ctx = this.canvas.getContext("2d");
-                this.instructionsDiv = document.getElementById("instructions");
-            }
+    // wake video on tap if iOS blocks autoplay
+    document.addEventListener('touchstart', () => {
+      if (video.paused) video.play().catch(()=>{});
+    }, { passive: true });
 
-            initializeState() {
-                this.repCount = 0;
-                this.state = "top";
-                this.lastStateChange = Date.now();
-                this.side = "left";
-                this.mirror = true;
-                this.kneeBuf = [];
-                this.th = {
-                    kneeDownDeg: 90, // 90 degrees for chair-sitting squat depth
-                    kneeUpDeg: 165,
-                    hipDepthMarginPx: 8,
-                    smoothN: 10,
-                    holdMsBottom: 700,
-                    holdMsTop: 800,
-                    fpsCap: 20
-                };
-                this.lastFrameTime = 0;
-            }
+    await initCamera();
 
-            setupEventListeners() {
-                document.getElementById("fullscreen-btn").addEventListener("click", () => {
-                    if (!document.fullscreenElement) {
-                        document.documentElement.requestFullscreen();
-                    } else if (document.exitFullscreen) {
-                        document.exitFullscreen();
-                    }
-                });
-            }
+    // ====== mediapipe pose ======
+    const pose = new Pose.Pose({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
+    });
+    pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      enableSegmentation: false,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
 
-            smooth(buf, val) {
-                if (!isNaN(val)) {
-                    buf.push(val);
-                    if (buf.length > this.th.smoothN) buf.shift();
-                }
-                return buf.length ? buf.reduce((a, b) => a + b, 0) / buf.length : NaN;
-            }
+    let lastResults = null;
+    pose.onResults((r) => { lastResults = r; });
 
-            drawBigStatus(text, color) {
-                this.instructionsDiv.textContent = text;
-                this.instructionsDiv.style.borderColor = `rgb(${color[0]},${color[1]},${color[2]})`;
-            }
+    // ====== helpers ======
+    function lerp(a, b, t){ return a + (b - a) * t; }
 
-            enoughHold(phase) {
-                const elapsed = Date.now() - this.lastStateChange;
-                const need = phase === "top" ? this.th.holdMsTop : this.th.holdMsBottom;
-                return elapsed >= need;
-            }
+    function angleAt(B, A, C) {
+      // angle ABC in degrees
+      const bax = A.x - B.x, bay = A.y - B.y;
+      const bcx = C.x - B.x, bcy = C.y - B.y;
+      const dot = bax*bcx + bay*bcy;
+      const ab = Math.hypot(bax, bay), cb = Math.hypot(bcx, bcy);
+      if (ab === 0 || cb === 0) return NaN;
+      let cos = dot / (ab * cb);
+      cos = Math.max(-1, Math.min(1, cos));
+      return Math.acos(cos) * 180 / Math.PI;
+    }
 
-            capFps() {
-                const targetDt = 1000 / Math.max(5, this.th.fpsCap);
-                const now = Date.now();
-                if (this.lastFrameTime === 0) {
-                    this.lastFrameTime = now;
-                    return true;
-                }
-                const dt = now - this.lastFrameTime;
-                if (dt < targetDt) return false;
-                this.lastFrameTime = now;
-                return true;
-            }
+    function pickSide(lm) {
+      // choose leg (L/R) with higher average visibility: hip, knee, ankle
+      const L = [23,25,27], R = [24,26,28]; // hip,knee,ankle
+      const vL = L.map(i=>lm[i].visibility??0).reduce((a,b)=>a+b,0);
+      const vR = R.map(i=>lm[i].visibility??0).reduce((a,b)=>a+b,0);
+      return vL >= vR ? 'L' : 'R';
+    }
 
-            async onResults(results) {
-                if (!this.capFps()) return;
+    function getLegLandmarks(lm, side) {
+      const ids = side === 'L'
+        ? {hip:23, knee:25, ankle:27}
+        : {hip:24, knee:26, ankle:28};
+      return {
+        hip: lm[ids.hip],
+        knee: lm[ids.knee],
+        ankle: lm[ids.ankle]
+      };
+    }
 
-                this.canvas.width = this.video.videoWidth;
-                this.canvas.height = this.video.videoHeight;
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.ctx.drawImage(this.video, 0, 0);
+    // smoothing buffer
+    const angleBuf = [];
+    const BUF = 8;
+    function smoothPush(v) {
+      angleBuf.push(v);
+      if (angleBuf.length > BUF) angleBuf.shift();
+      return angleBuf.reduce((a,b)=>a+b,0) / angleBuf.length;
+    }
 
-                if (this.mirror) {
-                    this.ctx.save();
-                    this.ctx.scale(-1, 1);
-                    this.ctx.translate(-this.canvas.width, 0);
-                    this.ctx.drawImage(this.video, 0, 0);
-                    this.ctx.restore();
-                }
+    // squat state
+    let state = 'stand'; // 'stand' | 'down' | 'hold' | 'deep'
+    let holdFrames = 0;
 
-                let kneeAng = NaN, depthOk = false;
-                if (results.poseLandmarks) {
-                    const w = this.canvas.width;
-                    const h = this.canvas.height;
-                    const lm = results.poseLandmarks;
-                    const landmarks = {
-                        left: {
-                            SH: 11, // LEFT_SHOULDER
-                            HIP: 23, // LEFT_HIP
-                            KNEE: 25, // LEFT_KNEE
-                            ANK: 27, // LEFT_ANKLE
-                            TOE: 31 // LEFT_FOOT_INDEX
-                        }
-                    };
-                    const side = landmarks[this.side];
+    // ====== main loop ======
+    async function tick() {
+      if (video.readyState >= 2) {
+        await pose.send({ image: video });
+      }
 
-                    const hipXy = toXY(lm[side.HIP], w, h);
-                    const kneeXy = toXY(lm[side.KNEE], w, h);
-                    const ankXy = toXY(lm[side.ANK], w, h);
+      // draw
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if (lastResults && lastResults.poseLandmarks) {
+        const lm = lastResults.poseLandmarks;
 
-                    kneeAng = angleABC(hipXy, kneeXy, ankXy);
-                    const kneeAngS = this.smooth(this.kneeBuf, kneeAng);
-                    depthOk = (hipXy[1] - kneeXy[1]) > this.th.hipDepthMarginPx;
+        // choose side automatically
+        const side = pickSide(lm);
+        const {hip, knee, ankle} = getLegLandmarks(lm, side);
 
-                    if (!isNaN(kneeAngS)) {
-                        if (this.state === "top") {
-                            if (kneeAngS <= this.th.kneeDownDeg && depthOk && this.enoughHold("top")) {
-                                this.state = "bottom";
-                                this.lastStateChange = Date.now();
-                                beep("low");
-                            }
-                        } else {
-                            if (kneeAngS >= this.th.kneeUpDeg && this.enoughHold("bottom")) {
-                                this.state = "top";
-                                this.lastStateChange = Date.now();
-                                this.repCount++;
-                                beep("high");
-                            }
-                        }
-                    }
-                }
+        // map normalized [0..1] to pixels (video is object-fit: cover, but normalized still fits canvas)
+        const W = canvas.width, H = canvas.height;
+        function toPx(p){ return { x: p.x * W, y: p.y * H}; }
+        const pHip = toPx(hip), pKnee = toPx(knee), pAnk = toPx(ankle);
 
-                let msg, color;
-                if (this.state === "top") {
-                    msg = depthOk ? "Stand tall" : "Squat to 90° (like sitting on a chair)";
-                    color = depthOk ? [40, 220, 40] : [30, 180, 255];
-                } else {
-                    const elapsed = Date.now() - this.lastStateChange;
-                    const need = this.th.holdMsBottom;
-                    const remain = Math.max(0, need - elapsed);
-                    if (remain > 0) {
-                        msg = `Hold... ${Math.floor(remain / 100)}`;
-                        color = [0, 180, 255];
-                    } else {
-                        msg = "Good — up!";
-                        color = [0, 220, 0];
-                    }
-                }
-                this.drawBigStatus(msg, color);
-            }
+        // knee angle (thigh vs shin)
+        let rawAngle = angleAt({x:knee.x, y:knee.y}, {x:hip.x, y:hip.y}, {x:ankle.x, y:ankle.y});
+        let angle = smoothPush(rawAngle);
 
-            async start() {
-                try {
-                    const stream = await navigator.media lỗi
+        // dynamic "chair line" = knee height (hip should drop to ~ this y at 90°)
+        const chairY = (pKnee.y + toPx(side==='L' ? lm[26] : lm[25]).y) / 2 || pKnee.y; // avg both knees if possible
+        ctx.save();
+        ctx.setLineDash([10,10]);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath();
+        ctx.moveTo(0, chairY);
+        ctx.lineTo(W, chairY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.font = '16px system-ui, -apple-system, Segoe UI, Roboto';
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillText('Target: bring hips down to this line (≈ 90°)', 16, Math.max(24, chairY - 8));
+        ctx.restore();
 
-System: It looks like your request was cut off. Based on your input, you want a simplified version of the squat analyzer that detects a 90-degree knee angle (like sitting on a chair) and includes only the video feed and minimal instructions. I'll complete the artifact by ensuring it maintains the core functionality, removes all non-essential UI elements (like the sidebar, rep counter, and posture details), and keeps the fullscreen feature with dynamic sizing. The instructions will be streamlined and displayed at the bottom of the video feed.
+        // draw leg segments
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = 'rgba(0,255,180,0.9)';
+        ctx.beginPath(); ctx.moveTo(pHip.x, pHip.y); ctx.lineTo(pKnee.x, pKnee.y); ctx.lineTo(pAnk.x, pAnk.y); ctx.stroke();
+        // joints
+        [pHip, pKnee, pAnk].forEach(pt => {
+          ctx.beginPath(); ctx.arc(pt.x, pt.y, 6, 0, Math.PI*2); ctx.fillStyle = '#00ffc8'; ctx.fill();
+        });
 
-<xaiArtifact artifact_id="57995469-acb1-40af-8421-f1a48df95973" artifact_version_id="8e7af12b-3993-44ba-bd96-4abc14e91f54" title="index.html" contentType="text/html">
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Squat Posture Live Analyzer</title>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
-        }
-        .video-container {
-            position: relative;
-            width: 100%;
-            max-width: 100%;
-            height: calc(100vh - 100px);
-        }
-        video, canvas {
-            width: 100%;
-            height: 100%;
-            object-fit: contain;
-            border: 2px solid #333;
-        }
-        #output_canvas {
-            position: absolute;
-            top: 0;
-            left: 0;
-        }
-        #instructions {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            text-align: center;
-            padding: 10px;
-            background-color: rgba(0, 0, 0, 0.7);
-            color: white;
-            font-size: 1.5em;
-            border: 3px solid;
-        }
-        #fullscreen-btn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 10px 20px;
-            background-color: #333;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 1em;
-        }
-        #fullscreen-btn:hover {
-            background-color: #555;
-        }
-    </style>
-</head>
-<body>
-    <div class="video-container">
-        <video id="webcam" autoplay playsinline></video>
-        <canvas id="output_canvas"></canvas>
-        <div id="instructions">Starting... | Squat to 90° (like sitting on a chair) | Place camera ~3–4m away, hip height, left side facing camera</div>
-        <button id="fullscreen-btn">Toggle Fullscreen</button>
-    </div>
+        // angle badge near knee
+        const badge = `${Math.round(angle)}°`;
+        ctx.font = 'bold 22px system-ui, -apple-system, Segoe UI, Roboto';
+        const badgeW = ctx.measureText(badge).width + 16;
+        const bx = pKnee.x + 14, by = pKnee.y - 14;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(bx, by-26, badgeW, 30);
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2; ctx.strokeRect(bx, by-26, badgeW, 30);
+        ctx.fillStyle = '#ffffff'; ctx.fillText(badge, bx+8, by-6);
 
-    <script>
-        // Utility Functions
-        const toXY = (landmark, w, h) => [landmark.x * w, landmark.y * h];
+        // progress bar (right edge): 180° (top) -> 90° (marker)
+        const barH = H * 0.6, barW = 10, barX = W - 28, barY = (H - barH)/2;
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(barX, barY, barW, barH);
+        // marker at 90°
+        const frac90 = (180 - 90) / 90; // 1.0 at 90°
+        const y90 = barY + frac90 * barH;
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(barX - 6, y90 - 2, barW + 12, 4);
 
-        const angleABC = (a, b, c) => {
-            const BA = [a[0] - b[0], a[1] - b[1]];
-            const BC = [c[0] - b[0], c[1] - b[1]];
-            const normBA = Math.sqrt(BA[0] ** 2 + BA[1] ** 2) || 1e-9;
-            const normBC = Math.sqrt(BC[0] ** 2 + BC[1] ** 2) || 1e-9;
-            const cosang = Math.min(1, Math.max(-1, (BA[0] * BC[0] + BA[1] * BC[1]) / (normBA * normBC)));
-            return Math.acos(cosang) * 180 / Math.PI;
-        };
+        // current angle marker
+        const clamped = Math.max(90, Math.min(180, angle));
+        const frac = (180 - clamped) / 90;
+        const yNow = lerp(barY, barY + barH, frac);
+        ctx.fillStyle = '#00ffc8'; ctx.fillRect(barX - 2, yNow - 3, barW + 4, 6);
 
-        const beep = (kind = "low") => {
-            constXu ctx = new (window.AudioContext || window.webkitAudioContext)();
-            const freq = kind === "low" ? 650 : 880;
-            const dur = kind === "low" ? 0.08 : 0.12;
-            const osc = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = "sine";
-            osc.frequency.setValueAtTime(freq, ctx.currentTime);
-            gain.gain.setValueAtTime(0.2, ctx.currentTime);
-            osc.connect(gain);
-            gain.connect(ctx.destination);
-            osc.start();
-            osc.stop(ctx.currentTime + dur);
-        };
-
-        // Squat Processor Class
-        class SquatProcessor {
-            constructor() {
-                this.pose = new Pose({
-                    locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-                });
-                this.pose.setOptions({
-                    modelComplexity: 1,
-                    smoothLandmarks: true,
-                    minDetectionConfidence: 0.5,
-                    minTrackingConfidence: 0.5
-                });
-                this.pose.onResults(this.onResults.bind(this));
-                this.initializeElements();
-                this.initializeState();
-                this.setupEventListeners();
-            }
-
-            initializeElements() {
-                this.video = document.getElementById("webcam");
-                this.canvas = document.getElementById("output_canvas");
-                this.ctx = this.canvas.getContext("2d");
-                this.instructionsDiv = document.getElementById("instructions");
-            }
-
-            initializeState() {
-                this.state = "top";
-                this.lastStateChange = Date.now();
-                this.side = "left";
-                this.mirror = true;
-                this.kneeBuf = [];
-                this.th = {
-                    kneeDownDeg: 90, // 90 degrees for chair-sitting squat depth
-                    kneeUpDeg: 165,
-                    hipDepthMarginPx: 8,
-                    smoothN: 10,
-                    holdMsBottom: 700,
-                    holdMsTop: 800,
-                    fpsCap: 20
-                };
-                this.lastFrameTime = 0;
-            }
-
-            setupEventListeners() {
-                document.getElementById("fullscreen-btn").addEventListener("click", () => {
-                    if (!document.fullscreenElement) {
-                        document.documentElement.requestFullscreen();
-                    } else if (document.exitFullscreen) {
-                        document.exitFullscreen();
-                    }
-                });
-            }
-
-            smooth(buf, val) {
-                if (!isNaN(val)) {
-                    buf.push(val);
-                    if (buf.length > this.th.smoothN) buf.shift();
-                }
-                return buf.length ? buf.reduce((a, b) => a + b, 0) / buf.length : NaN;
-            }
-
-            drawBigStatus(text, color) {
-                this.instructionsDiv.textContent = text;
-                this.instructionsDiv.style.borderColor = `rgb(${color[0]},${color[1]},${color[2]})`;
-            }
-
-            enoughHold(phase) {
-                const elapsed = Date.now() - this.lastStateChange;
-                const need = phase === "top" ? this.th.holdMsTop : this.th.holdMsBottom;
-                return elapsed >= need;
-            }
-
-            capFps() {
-                const targetDt = 1000 / Math.max(5, this.th.fpsCap);
-                const now = Date.now();
-                if (this.lastFrameTime === 0) {
-                    this.lastFrameTime = now;
-                    return true;
-                }
-                const dt = now - this.lastFrameTime;
-                if (dt < targetDt) return false;
-                this.lastFrameTime = now;
-                return true;
-            }
-
-            async onResults(results) {
-                if (!this.capFps()) return;
-
-                this.canvas.width = this.video.videoWidth;
-                this.canvas.height = this.video.videoHeight;
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                this.ctx.drawImage(this.video, 0, 0);
-
-                if (this.mirror) {
-                    this.ctx.save();
-                    this.ctx.scale(-1, 1);
-                    this.ctx.translate(-this.canvas.width, 0);
-                    this.ctx.drawImage(this.video, 0, 0);
-                    this.ctx.restore();
-                }
-
-                let kneeAng = NaN, depthOk = false;
-                if (results.poseLandmarks) {
-                    const w = this.canvas.width;
-                    const h = this.canvas.height;
-                    const lm = results.poseLandmarks;
-                    const landmarks = {
-                        left: {
-                            HIP: 23, // LEFT_HIP
-                            KNEE: 25, // LEFT_KNEE
-                            ANK: 27 // LEFT_ANKLE
-                        }
-                    };
-                    const side = landmarks[this.side];
-
-                    const hipXy = toXY(lm[side.HIP], w, h);
-                    const kneeXy = toXY(lm[side.KNEE], w, h);
-                    const ankXy = toXY(lm[side.ANK], w, h);
-
-                    kneeAng = kneeAng = angleABC(hipXy, kneeXy, ankXy);
-                    const kneeAngS = this.smooth(this.kneeBuf, kneeAng);
-                    depthOk = (hipXy[1] - kneeXy[1]) > this.th.hipDepthMarginPx;
-
-                    if (!isNaN(kneeAngS)) {
-                        if (this.state === "top") {
-                            if (kneeAngS <= this.th.kneeDownDeg && depthOk && this.enoughHold("top")) {
-                                this.state = "bottom";
-                                this.lastStateChange = Date.now();
-                                beep("low");
-                            }
-                        } else {
-                            if (kneeAngS >= this.th.kneeUpDeg && this.enoughHold("bottom")) {
-                                this.state = "top";
-                                this.lastStateChange = Date.now();
-                                beep("high");
-                            }
-                        }
-                    }
-                }
-
-                let msg, color;
-                if (this.state === "top") {
-                    msg = depthOk ? "Stand tall" : "Squat to 90° (like sitting on a chair)";
-                    color = depthOk ? [40, 220, 40] : [30, 180, 255];
-                } else {
-                    const elapsed = Date.now() - this.lastStateChange;
-                    const need = this.th.holdMsBottom;
-                    const remain = Math.max(0, need - elapsed);
-                    if (remain > 0) {
-                        msg = `Hold... ${Math.floor(remain / 100)}`;
-                        color = [0, 180, 255];
-                    } else {
-                        msg = "Good — up!";
-                        color = [0, 220, 0];
-                    }
-                }
-                this.drawBigStatus(msg, color);
-            }
-
-            async start() {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                    this.video.srcObject = stream;
-                    this.video.play();
-                    const processFrame = async () => {
-                        await this.pose.send({ image: this.video });
-                        requestAnimationFrame(processFrame);
-                    };
-                    processFrame();
-                } catch (e) {
-                    this.instructionsDiv.textContent = "Camera error: Check permissions or try Chrome.";
-                    console.error(e);
-                }
-            }
+        // state machine
+        // thresholds with a little hysteresis to reduce flicker
+        const STAND_T = 160, DOWN_T = 100, HOLD_MIN = 86, HOLD_MAX = 94;
+        if (angle >= STAND_T) { state = 'stand'; holdFrames = 0; }
+        else if (angle > HOLD_MAX && angle < STAND_T) { state = 'down'; holdFrames = 0; }
+        else if (angle >= HOLD_MIN && angle <= HOLD_MAX) {
+          state = 'hold'; holdFrames++;
+        } else if (angle < HOLD_MIN) {
+          state = 'deep'; holdFrames = 0;
         }
 
-        // Initialize and Start
-        const processor = new SquatProcessor();
-        processor.start();
-    </script>
+        // central coaching text
+        let msg = '', color = '#ffffff';
+        if (state === 'stand')      { msg = 'Start: go down slowly'; color = '#ffffff'; }
+        else if (state === 'down')  { msg = 'Lower… aim for 90°';    color = '#ffeb3b'; }
+        else if (state === 'hold')  { msg = holdFrames > 30 ? 'Perfect 90° — hold steady' : 'Almost there… hold'; color = '#00ffc8'; }
+        else if (state === 'deep')  { msg = 'Too deep — rise a bit'; color = '#ff7676'; }
+
+        ctx.font = '600 28px system-ui, -apple-system, Segoe UI, Roboto';
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.fillRect(W/2 - 240, 28, 480, 46);
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 2;
+        ctx.strokeRect(W/2 - 240, 28, 480, 46);
+        ctx.fillStyle = color; ctx.fillText(msg, W/2, 60);
+
+        // hip vs chair line cue (tiny arrow)
+        const diff = pHip.y - chairY; // + = below line (deeper)
+        ctx.beginPath();
+        ctx.moveTo(pHip.x, pHip.y);
+        ctx.lineTo(pHip.x, chairY);
+        ctx.strokeStyle = diff > 6 ? '#ff7676' : '#00ffc8';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+
+      // schedule next frame
+      // (use requestAnimationFrame for smooth draw; MPose internal throttling handles perf)
+      requestAnimationFrame(tick);
+    }
+
+    // kick off once video metadata is ready
+    if (video.readyState >= 2) tick();
+    else video.addEventListener('loadeddata', tick, { once: true });
+  })();
+  </script>
 </body>
 </html>
