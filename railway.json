@@ -9,14 +9,17 @@
     "nixpacksPlan": {
       "phases": {
         "setup": {
-          "nixPkgs": ["python311", "gcc", "libasound2", "ffmpeg"],
-          "aptPkgs": ["libasound2", "ffmpeg"]
+          "nixPkgs": ["python311", "gcc", "alsa-lib", "ffmpeg", "libgl1", "libglib2.0"],
+          "aptPkgs": ["libasound2", "ffmpeg", "libgl1-mesa-glx", "libglib2.0-0"]
+        },
+        "build": {
+          "commands": ["pip list"]
         }
       }
     }
   },
   "deploy": {
-    "startCommand": "streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false --client.showErrorDetails false --client.toolbarMode minimal",
+    "startCommand": "streamlit run main.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false --client.showErrorDetails false --client.toolbarMode minimal",
     "restartPolicy": "on-failure"
   }
 }
