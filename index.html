@@ -47,12 +47,9 @@
             font-size: 2em !important;
             font-weight: bold;
         }
-        input, select, label {
+        input, label {
             margin: 5px 0;
             display: block;
-        }
-        input[type="range"] {
-            width: 100%;
         }
         #status {
             position: absolute;
@@ -63,7 +60,7 @@
             padding: 10px;
             background-color: rgba(0, 0, 0, 0.7);
             color: white;
-            font-size: 1.5em;
+            font-size: 2em;
             border: 3px solid;
         }
         #rep-count {
@@ -75,62 +72,34 @@
             color: white;
             font-size: 1.5em;
         }
-        .hidden {
-            display: none;
+        #posture-details {
+            position: absolute;
+            top: 60px;
+            left: 20px;
+            padding: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            font-size: 1.2em;
         }
     </style>
 </head>
 <body>
     <div id="main">
         <h1>🏋️ Squat Posture Live Analyzer</h1>
-        <p>Side view recommended · Educational only · Uses your browser webcam</p>
+        <p>Side view (left side facing camera) · Educational only · Uses your browser webcam</p>
         <div class="video-container">
             <video id="webcam" autoplay playsinline></video>
             <canvas id="output_canvas"></canvas>
             <div id="status">Starting...</div>
             <div id="rep-count">Reps: 0</div>
+            <div id="posture-details"></div>
         </div>
-        <div id="info" class="hidden">
-            <h3>How it decides depth & reps</h3>
-            <p>
-                <strong>Heuristics</strong> (side view):<br>
-                - <strong>Depth</strong>: Hip must be below knee by a set margin (pixels).<br>
-                - <strong>Angles</strong>: Knee angle (Hip–Knee–Ankle) ≤ Bottom threshold → down. Rises to ≥ Top threshold after bottom → +1 rep.<br>
-                - <strong>Hold-to-count</strong>: Must stay at bottom/top for set milliseconds.<br>
-                <strong>Grandma Mode</strong>: Bigger text, high-contrast, smoother rhythm.
-            </p>
-        </div>
+        <p><strong>Tip</strong>: Place camera ~3–4m away at hip height, perpendicular to your left side. Keep entire body in frame. Wear contrasting clothes.</p>
     </div>
     <div id="sidebar">
         <h2>Settings</h2>
-        <label>Tracking side:</label>
-        <select id="side">
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-        </select>
-        <label><input type="checkbox" id="mirror" checked> Mirror preview (selfie)</label>
-        <h3>Thresholds</h3>
-        <label>Knee angle at bottom (≤): <span id="knee-down-val">100</span></label>
-        <input type="range" id="knee-down-deg" min="60" max="140" value="100">
-        <label>Knee angle at top (≥): <span id="knee-up-val">165</span></label>
-        <input type="range" id="knee-up-deg" min="140" max="180" value="165">
-        <label>Hip-below-knee margin (px): <span id="hip-margin-val">8</span></label>
-        <input type="range" id="hip-margin" min="0" max="30" value="8">
-        <label>Angle smoothing (frames): <span id="smooth-n-val">8</span></label>
-        <input type="range" id="smooth-n" min="1" max="20" value="8">
-        <label>Hold at bottom (ms): <span id="hold-bottom-val">600</span></label>
-        <input type="range" id="hold-bottom" min="0" max="2000" value="600">
-        <label>Hold at top (ms): <span id="hold-top-val">700</span></label>
-        <input type="range" id="hold-top" min="0" max="2000" value="700">
-        <label>FPS cap: <span id="fps-cap-val">20</span></label>
-        <input type="range" id="fps-cap" min="5" max="30" value="20">
-        <h3>Display</h3>
-        <label><input type="checkbox" id="grandma-mode" checked> Grandma Mode (big & simple)</label>
-        <label><input type="checkbox" id="show-angles"> Show angles (advanced)</label>
-        <label><input type="checkbox" id="show-lines"> Show helper lines</label>
-        <label><input type="checkbox" id="show-skeleton"> Show skeleton</label>
+        <label><input type="checkbox" id="show-lines" checked> Show helper lines</label>
         <label><input type="checkbox" id="audible-beep" checked> Beep at bottom/top</label>
-        <p><strong>Tip</strong>: Place camera ~3–4m away at hip height, perpendicular to your side. Keep entire body in frame. Wear contrasting clothes.</p>
     </div>
 
     <script>
@@ -183,9 +152,7 @@
                 this.side = "left";
                 this.mirror = true;
                 this.grandmaMode = true;
-                this.showAngles = false;
-                this.showLines = false;
-                this.showSkeleton = false;
+                this.showLines = true;
                 this.audibleBeep = true;
                 this.kneeBuf = [];
                 this.hipBuf = [];
@@ -194,9 +161,9 @@
                     kneeDownDeg: 100,
                     kneeUpDeg: 165,
                     hipDepthMarginPx: 8,
-                    smoothN: 8,
-                    holdMsBottom: 600,
-                    holdMsTop: 700,
+                    smoothN: 10,
+                    holdMsBottom: 700,
+                    holdMsTop: 800,
                     fpsCap: 20
                 };
                 this.lastFrameTime = 0;
@@ -205,6 +172,7 @@
                 this.ctx = this.canvas.getContext("2d");
                 this.statusDiv = document.getElementById("status");
                 this.repDiv = document.getElementById("rep-count");
+                this.postureDiv = document.getElementById("posture-details");
             }
 
             smooth(buf, val) {
@@ -225,11 +193,9 @@
             }
 
             drawBigStatus(text, color) {
-                const w = this.canvas.width;
-                const h = this.canvas.height;
                 this.statusDiv.textContent = text;
                 this.statusDiv.style.borderColor = `rgb(${color[0]},${color[1]},${color[2]})`;
-                this.statusDiv.style.fontSize = this.grandmaMode ? "2em" : "1.5em";
+                this.statusDiv.style.fontSize = "2em";
             }
 
             enoughHold(phase) {
@@ -267,19 +233,9 @@
                     this.ctx.restore();
                 }
 
-                let kneeAng = NaN, hipAng = NaN, ankAng = NaN, depthOk = false;
+                let kneeAng = NaN, hipAng = NaN, ankAng = NaN, depthOk = false, kneeOverToePx = 0;
+                let postureFeedback = [];
                 if (results.poseLandmarks) {
-                    if (this.showSkeleton && !this.grandmaMode) {
-                        drawLandmarks(this.ctx, results.poseLandmarks, {
-                            color: "white",
-                            lineWidth: 2
-                        });
-                        drawConnectors(this.ctx, results.poseLandmarks, POSE_CONNECTIONS, {
-                            color: "white",
-                            lineWidth: 4
-                        });
-                    }
-
                     const w = this.canvas.width;
                     const h = this.canvas.height;
                     const lm = results.poseLandmarks;
@@ -290,13 +246,6 @@
                             KNEE: 25, // LEFT_KNEE
                             ANK: 27, // LEFT_ANKLE
                             TOE: 31 // LEFT_FOOT_INDEX
-                        },
-                        right: {
-                            SH: 12, // RIGHT_SHOULDER
-                            HIP: 24, // RIGHT_HIP
-                            KNEE: 26, // RIGHT_KNEE
-                            ANK: 28, // RIGHT_ANKLE
-                            TOE: 32 // RIGHT_FOOT_INDEX
                         }
                     };
                     const side = landmarks[this.side];
@@ -316,8 +265,14 @@
                     const ankAngS = this.smooth(this.ankleBuf, ankAng);
 
                     depthOk = (hipXy[1] - kneeXy[1]) > this.th.hipDepthMarginPx;
+                    kneeOverToePx = kneeXy[0] - toeXy[0];
 
-                    if (this.showLines && !this.grandmaMode) {
+                    // Posture feedback
+                    postureFeedback.push(`Knee Angle: ${kneeAngS.toFixed(1)}°${kneeAngS <= this.th.kneeDownDeg ? " ✓" : ""}`);
+                    postureFeedback.push(`Hip Depth: ${depthOk ? "Below knees ✓" : "Lower hips"}`);
+                    postureFeedback.push(`Knee Position: ${kneeOverToePx > 20 ? "Too far forward" : "Good ✓"}`);
+
+                    if (this.showLines) {
                         this.ctx.beginPath();
                         this.ctx.moveTo(ankXy[0], 0);
                         this.ctx.lineTo(ankXy[0], h);
@@ -347,12 +302,6 @@
                         this.ctx.stroke();
                     }
 
-                    if (this.showAngles && !this.grandmaMode) {
-                        this.drawText(`Knee: ${kneeAngS.toFixed(1)}°`, 10, 36, 1);
-                        this.drawText(`Hip: ${hipAngS.toFixed(1)}°`, 10, 72, 1);
-                        this.drawText(`Ankle: ${ankAngS.toFixed(1)}°`, 10, 108, 1);
-                    }
-
                     if (!isNaN(kneeAngS)) {
                         if (this.state === "top") {
                             if (kneeAngS <= this.th.kneeDownDeg && depthOk && this.enoughHold("top")) {
@@ -372,6 +321,7 @@
                 }
 
                 this.repDiv.textContent = `Reps: ${this.repCount}`;
+                this.postureDiv.innerHTML = postureFeedback.join("<br>");
                 let msg, color;
                 if (this.state === "top") {
                     msg = depthOk ? "Stand tall" : "Sit";
@@ -412,75 +362,14 @@
         const processor = new SquatProcessor();
 
         // UI Event Listeners
-        function updateThresholds() {
-            processor.th.kneeDownDeg = +document.getElementById("knee-down-deg").value;
-            processor.th.kneeUpDeg = +document.getElementById("knee-up-deg").value;
-            processor.th.hipDepthMarginPx = +document.getElementById("hip-margin").value;
-            processor.th.smoothN = +document.getElementById("smooth-n").value;
-            processor.th.holdMsBottom = +document.getElementById("hold-bottom").value;
-            processor.th.holdMsTop = +document.getElementById("hold-top").value;
-            processor.th.fpsCap = +document.getElementById("fps-cap").value;
-
-            if (processor.grandmaMode) {
-                processor.th.smoothN = Math.max(processor.th.smoothN, 10);
-                processor.th.holdMsBottom = Math.max(processor.th.holdMsBottom, 700);
-                processor.th.holdMsTop = Math.max(processor.th.holdMsTop, 800);
-                processor.th.fpsCap = Math.min(processor.th.fpsCap, 20);
-            }
-
-            document.getElementById("knee-down-val").textContent = processor.th.kneeDownDeg;
-            document.getElementById("knee-up-val").textContent = processor.th.kneeUpDeg;
-            document.getElementById("hip-margin-val").textContent = processor.th.hipDepthMarginPx;
-            document.getElementById("smooth-n-val").textContent = processor.th.smoothN;
-            document.getElementById("hold-bottom-val").textContent = processor.th.holdMsBottom;
-            document.getElementById("hold-top-val").textContent = processor.th.holdMsTop;
-            document.getElementById("fps-cap-val").textContent = processor.th.fpsCap;
-
-            processor.kneeBuf = processor.kneeBuf.slice(-processor.th.smoothN);
-            processor.hipBuf = processor.hipBuf.slice(-processor.th.smoothN);
-            processor.ankleBuf = processor.ankleBuf.slice(-processor.th.smoothN);
-        }
-
-        document.getElementById("side").addEventListener("change", (e) => {
-            processor.side = e.target.value;
-        });
-
-        document.getElementById("mirror").addEventListener("change", (e) => {
-            processor.mirror = e.target.checked;
-        });
-
-        document.getElementById("grandma-mode").addEventListener("change", (e) => {
-            processor.grandmaMode = e.target.checked;
-            document.getElementById("show-angles").checked = !processor.grandmaMode;
-            document.getElementById("show-lines").checked = !processor.grandmaMode;
-            document.getElementById("show-skeleton").checked = !processor.grandmaMode;
-            processor.showAngles = !processor.grandmaMode;
-            processor.showLines = !processor.grandmaMode;
-            processor.showSkeleton = !processor.grandmaMode;
-            updateThresholds();
-        });
-
-        document.getElementById("show-angles").addEventListener("change", (e) => {
-            processor.showAngles = e.target.checked;
-        });
-
         document.getElementById("show-lines").addEventListener("change", (e) => {
             processor.showLines = e.target.checked;
-        });
-
-        document.getElementById("show-skeleton").addEventListener("change", (e) => {
-            processor.showSkeleton = e.target.checked;
         });
 
         document.getElementById("audible-beep").addEventListener("change", (e) => {
             processor.audibleBeep = e.target.checked;
         });
 
-        ["knee-down-deg", "knee-up-deg", "hip-margin", "smooth-n", "hold-bottom", "hold-top", "fps-cap"].forEach(id => {
-            document.getElementById(id).addEventListener("input", updateThresholds);
-        });
-
-        updateThresholds();
         processor.start();
     </script>
 </body>
