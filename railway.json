@@ -10,7 +10,7 @@
       "phases": {
         "setup": {
           "nixPkgs": ["python311", "gcc", "alsa-lib", "ffmpeg", "mesa", "glib", "protobuf"],
-          "aptPkgs": ["libasound2", "ffmpeg", "libgl1-mesa-glx", "libglib2.0-0"]
+          "aptPkgs": ["libasound2t64", "ffmpeg", "libgl1-mesa-dev", "libglib2.0-0"]
         },
         "build": {
           "commands": ["pip list"]
