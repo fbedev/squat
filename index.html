@@ -13,25 +13,37 @@
             padding: 0;
             background-color: #f4f4f4;
             display: flex;
+            height: 100vh;
+            overflow: hidden;
         }
         #main {
             flex: 3;
             padding: 20px;
             text-align: center;
+            position: relative;
         }
         #sidebar {
             flex: 1;
             padding: 20px;
             background-color: #e0e0e0;
             border-left: 2px solid #ccc;
+            overflow-y: auto;
         }
         h1 {
             font-size: 2em;
             margin-bottom: 10px;
         }
+        .video-container {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+            max-width: 100%;
+            height: calc(100vh - 150px);
+        }
         video, canvas {
             width: 100%;
-            max-width: 640px;
+            height: 100%;
+            object-fit: contain;
             border: 2px solid #333;
         }
         #output_canvas {
@@ -39,17 +51,14 @@
             top: 0;
             left: 0;
         }
-        .video-container {
-            position: relative;
-            display: inline-block;
-        }
         .grandma-mode {
             font-size: 2em !important;
             font-weight: bold;
         }
         input, label {
-            margin: 5px 0;
+            margin: 10px 0;
             display: block;
+            font-size: 1.1em;
         }
         #status {
             position: absolute;
@@ -81,6 +90,20 @@
             color: white;
             font-size: 1.2em;
         }
+        #fullscreen-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            padding: 10px 20px;
+            background-color: #333;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        #fullscreen-btn:hover {
+            background-color: #555;
+        }
     </style>
 </head>
 <body>
@@ -93,6 +116,7 @@
             <div id="status">Starting...</div>
             <div id="rep-count">Reps: 0</div>
             <div id="posture-details"></div>
+            <button id="fullscreen-btn">Toggle Fullscreen</button>
         </div>
         <p><strong>Tip</strong>: Place camera ~3–4m away at hip height, perpendicular to your left side. Keep entire body in frame. Wear contrasting clothes.</p>
     </div>
@@ -103,22 +127,19 @@
     </div>
 
     <script>
-        // Geometry Utils
-        function toXY(landmark, w, h) {
-            return [landmark.x * w, landmark.y * h];
-        }
+        // Utility Functions
+        const toXY = (landmark, w, h) => [landmark.x * w, landmark.y * h];
 
-        function angleABC(a, b, c) {
+        const angleABC = (a, b, c) => {
             const BA = [a[0] - b[0], a[1] - b[1]];
             const BC = [c[0] - b[0], c[1] - b[1]];
             const normBA = Math.sqrt(BA[0] ** 2 + BA[1] ** 2) || 1e-9;
             const normBC = Math.sqrt(BC[0] ** 2 + BC[1] ** 2) || 1e-9;
             const cosang = Math.min(1, Math.max(-1, (BA[0] * BC[0] + BA[1] * BC[1]) / (normBA * normBC)));
             return Math.acos(cosang) * 180 / Math.PI;
-        }
+        };
 
-        // Beep Utility
-        function beep(kind = "low") {
+        const beep = (kind = "low") => {
             const ctx = new (window.AudioContext || window.webkitAudioContext)();
             const freq = kind === "low" ? 650 : 880;
             const dur = kind === "low" ? 0.08 : 0.12;
@@ -131,9 +152,9 @@
             gain.connect(ctx.destination);
             osc.start();
             osc.stop(ctx.currentTime + dur);
-        }
+        };
 
-        // Squat Processor
+        // Squat Processor Class
         class SquatProcessor {
             constructor() {
                 this.pose = new Pose({
@@ -146,6 +167,21 @@
                     minTrackingConfidence: 0.5
                 });
                 this.pose.onResults(this.onResults.bind(this));
+                this.initializeElements();
+                this.initializeState();
+                this.setupEventListeners();
+            }
+
+            initializeElements() {
+                this.video = document.getElementById("webcam");
+                this.canvas = document.getElementById("output_canvas");
+                this.ctx = this.canvas.getContext("2d");
+                this.statusDiv = document.getElementById("status");
+                this.repDiv = document.getElementById("rep-count");
+                this.postureDiv = document.getElementById("posture-details");
+            }
+
+            initializeState() {
                 this.repCount = 0;
                 this.state = "top";
                 this.lastStateChange = Date.now();
@@ -158,7 +194,7 @@
                 this.hipBuf = [];
                 this.ankleBuf = [];
                 this.th = {
-                    kneeDownDeg: 100,
+                    kneeDownDeg: 90, // Changed to 90 degrees for squat depth
                     kneeUpDeg: 165,
                     hipDepthMarginPx: 8,
                     smoothN: 10,
@@ -167,12 +203,22 @@
                     fpsCap: 20
                 };
                 this.lastFrameTime = 0;
-                this.video = document.getElementById("webcam");
-                this.canvas = document.getElementById("output_canvas");
-                this.ctx = this.canvas.getContext("2d");
-                this.statusDiv = document.getElementById("status");
-                this.repDiv = document.getElementById("rep-count");
-                this.postureDiv = document.getElementById("posture-details");
+            }
+
+            setupEventListeners() {
+                document.getElementById("show-lines").addEventListener("change", (e) => {
+                    this.showLines = e.target.checked;
+                });
+                document.getElementById("audible-beep").addEventListener("change", (e) => {
+                    this.audibleBeep = e.target.checked;
+                });
+                document.getElementById("fullscreen-btn").addEventListener("click", () => {
+                    if (!document.fullscreenElement) {
+                        document.documentElement.requestFullscreen();
+                    } else if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    }
+                });
             }
 
             smooth(buf, val) {
@@ -195,7 +241,7 @@
             drawBigStatus(text, color) {
                 this.statusDiv.textContent = text;
                 this.statusDiv.style.borderColor = `rgb(${color[0]},${color[1]},${color[2]})`;
-                this.statusDiv.style.fontSize = "2em";
+                this.statusDiv.style.fontSize = this.grandmaMode ? "2em" : "1.5em";
             }
 
             enoughHold(phase) {
@@ -267,7 +313,6 @@
                     depthOk = (hipXy[1] - kneeXy[1]) > this.th.hipDepthMarginPx;
                     kneeOverToePx = kneeXy[0] - toeXy[0];
 
-                    // Posture feedback
                     postureFeedback.push(`Knee Angle: ${kneeAngS.toFixed(1)}°${kneeAngS <= this.th.kneeDownDeg ? " ✓" : ""}`);
                     postureFeedback.push(`Hip Depth: ${depthOk ? "Below knees ✓" : "Lower hips"}`);
                     postureFeedback.push(`Knee Position: ${kneeOverToePx > 20 ? "Too far forward" : "Good ✓"}`);
@@ -324,7 +369,7 @@
                 this.postureDiv.innerHTML = postureFeedback.join("<br>");
                 let msg, color;
                 if (this.state === "top") {
-                    msg = depthOk ? "Stand tall" : "Sit";
+                    msg = depthOk ? "Stand tall" : "Squat to 90°";
                     color = depthOk ? [40, 220, 40] : [30, 180, 255];
                 } else {
                     const elapsed = Date.now() - this.lastStateChange;
@@ -358,18 +403,8 @@
             }
         }
 
-        // Initialize
+        // Initialize and Start
         const processor = new SquatProcessor();
-
-        // UI Event Listeners
-        document.getElementById("show-lines").addEventListener("change", (e) => {
-            processor.showLines = e.target.checked;
-        });
-
-        document.getElementById("audible-beep").addEventListener("change", (e) => {
-            processor.audibleBeep = e.target.checked;
-        });
-
         processor.start();
     </script>
 </body>
