@@ -14,11 +14,11 @@ COPY . .
 EXPOSE 8080
 
 # Shell form so $PORT expands; default to 8080 if not provided
-CMD bash -lc 'streamlit run main.py \
+CMD bash -lc 'unset STREAMLIT_SERVER_PORT; \
+  streamlit run main.py \
   --server.address=0.0.0.0 \
   --server.port=${PORT:-8080} \
   --server.fileWatcherType=none \
   --browser.gatherUsageStats=false \
   --client.showErrorDetails=false \
   --client.toolbarMode=minimal'
-
