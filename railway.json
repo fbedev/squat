@@ -1,13 +1,22 @@
 {
   "$schema": "https://schema.up.railway.app/railway.schema.json",
   "build": {
+    "builder": "NIXPACKS",
     "env": {
       "PYTHON_VERSION": "3.11.8",
       "PIP_ONLY_BINARY": ":all:"
+    },
+    "nixpacksPlan": {
+      "phases": {
+        "setup": {
+          "nixPkgs": ["python311", "gcc", "libasound2", "ffmpeg"],
+          "aptPkgs": ["libasound2", "ffmpeg"]
+        }
+      }
     }
   },
   "deploy": {
-    "startCommand": "streamlit run main.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false --client.showErrorDetails false --client.toolbarMode minimal",
+    "startCommand": "streamlit run app.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false --client.showErrorDetails false --client.toolbarMode minimal",
     "restartPolicy": "on-failure"
   }
 }
