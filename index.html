@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Squat Analyzer</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-core"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-converter"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
+  <style>
+    body { margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#111; }
+    canvas { position:absolute; }
+    video { transform: scaleX(-1); display:none; }
+  </style>
+</head>
+<body>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => resolve(video);
+      });
+    }
+
+    async function run() {
+      await setupCamera();
+      video.play();
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const detector = await poseDetection.createDetector(
+        poseDetection.SupportedModels.MoveNet,
+        { modelType: 'SinglePose.Lightning' }
+      );
+
+      async function detect() {
+        const poses = await detector.estimatePoses(video);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        if (poses.length > 0) {
+          const keypoints = poses[0].keypoints;
+          ctx.fillStyle = "red";
+          keypoints.forEach(kp => {
+            if (kp.score > 0.5) {
+              ctx.beginPath();
+              ctx.arc(kp.x, kp.y, 5, 0, 2 * Math.PI);
+              ctx.fill();
+            }
+          });
+        }
+        requestAnimationFrame(detect);
+      }
+      detect();
+    }
+
+    run();
+  </script>
+</body>
+</html>
