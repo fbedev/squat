@@ -1,8 +1,6 @@
 streamlit==1.37.1
 streamlit-webrtc==0.47.1
 opencv-python-headless==4.10.0.84
-av==10.0.0
+av==11.0.1
 numpy==1.26.4
 mediapipe==0.10.14
-# optional:
-# psutil==5.9.8   # if you want CPU/RAM meters
