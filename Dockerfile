@@ -21,3 +21,4 @@ CMD bash -lc 'streamlit run main.py \
   --browser.gatherUsageStats=false \
   --client.showErrorDetails=false \
   --client.toolbarMode=minimal'
+
