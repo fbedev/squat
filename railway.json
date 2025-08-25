@@ -1,6 +1,8 @@
 {
-    "$schema": "https://schema.up.railway.app/railway.schema.json",
-    "deploy": {
-        "startCommand": "streamlit run main.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false --client.showErrorDetails false --client.toolbarMode minimal"
-    }
+  "$schema": "https://schema.up.railway.app/railway.schema.json",
+  "build": { "env": { "PYTHON_VERSION": "3.11.8" } },
+  "deploy": {
+    "startCommand": "streamlit run main.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false --client.showErrorDetails false --client.toolbarMode minimal",
+    "restartPolicy": "on-failure"
+  }
 }
