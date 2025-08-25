@@ -7,13 +7,13 @@
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/pose-detection"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose"></script>
   <style>
-    body { margin:0; display:flex; justify-content:center; align-items:center; height:100vh; background:#111; }
-    canvas { position:absolute; }
-    video { transform: scaleX(-1); display:none; }
+    body { margin:0; background:#111; display:flex; justify-content:center; align-items:center; height:100vh; }
+    canvas { position:absolute; top:0; left:0; }
+    video { display:none; }
   </style>
 </head>
 <body>
-  <video id="video" autoplay playsinline></video>
+  <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas"></canvas>
 
   <script>
@@ -22,16 +22,24 @@
     const ctx = canvas.getContext('2d');
 
     async function setupCamera() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      video.srcObject = stream;
-      return new Promise(resolve => {
-        video.onloadedmetadata = () => resolve(video);
-      });
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" } // front camera on iPad/phone
+        });
+        video.srcObject = stream;
+        return new Promise(resolve => {
+          video.onloadedmetadata = () => {
+            resolve(video);
+          };
+        });
+      } catch (err) {
+        alert("Camera access denied: " + err);
+      }
     }
 
     async function run() {
       await setupCamera();
-      video.play();
+      await video.play();
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
 
@@ -41,9 +49,9 @@
       );
 
       async function detect() {
-        const poses = await detector.estimatePoses(video);
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height); // draw camera feed
 
+        const poses = await detector.estimatePoses(video);
         if (poses.length > 0) {
           const keypoints = poses[0].keypoints;
           ctx.fillStyle = "red";
