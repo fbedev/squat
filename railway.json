@@ -3,23 +3,18 @@
   "build": {
     "builder": "NIXPACKS",
     "env": {
-      "PYTHON_VERSION": "3.11.8",
-      "PIP_ONLY_BINARY": ":all:"
+      "PYTHON_VERSION": "3.11.8"
     },
     "nixpacksPlan": {
       "phases": {
         "setup": {
-          "nixPkgs": ["python311", "gcc", "alsa-lib", "ffmpeg", "mesa", "glib", "protobuf"],
-          "aptPkgs": ["libasound2t64", "ffmpeg", "libgl1-mesa-dev", "libglib2.0-0"]
-        },
-        "build": {
-          "commands": ["pip list"]
+          "aptPkgs": ["ffmpeg", "libglib2.0-0"]   // ffmpeg for video decode, glib for mediapipe
         }
       }
     }
   },
   "deploy": {
-    "startCommand": "streamlit run main.py --server.address 0.0.0.0 --server.port $PORT --server.fileWatcherType none --browser.gatherUsageStats false --client.showErrorDetails false --client.toolbarMode minimal",
+    "startCommand": "streamlit run app.py --server.address 0.0.0.0 --server.port $PORT",
     "restartPolicy": "on-failure"
   }
 }
