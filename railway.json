@@ -18,7 +18,7 @@
     }
   },
   "deploy": {
-    "startCommand": "streamlit run app.py --server.address 0.0.0.0 --server.port $PORT",
+    "startCommand": "streamlit run main.py --server.address 0.0.0.0 --server.port $PORT",
     "restartPolicy": "on-failure"
   }
 }
