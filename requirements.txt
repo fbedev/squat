@@ -1,7 +1,7 @@
 streamlit==1.37.1
 streamlit-webrtc==0.47.1
-opencv-python-headless==4.10.0.84
-opencv-python>=4.10.0.84; sys_platform != "linux"  # Prevent opencv-python on Linux
+opencv-python-headless==4.10.0.84; sys_platform == "linux"   # use headless on Railway/Linux
+opencv-python==4.10.0.84; sys_platform != "linux"            # use full version locally (macOS/Windows)
 av==11.0.0
 numpy==1.26.4
 mediapipe==0.10.14
