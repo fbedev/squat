@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1" />
-<title>Squat 90° — Skeleton + Angles + Reps</title>
+<title>Squat 130° — Skeleton + Angles + Reps</title>
 <style>
   html, body { margin:0; height:100%; background:#000; overflow:hidden; touch-action:none; -webkit-user-select:none; user-select:none; }
   #wrap { position:fixed; inset:0; }
@@ -19,9 +19,9 @@
   #mute { right:66px; }
   #hud {
     position:absolute; left:16px; bottom:16px; z-index:5; color:#fff;
-    font:600 28px system-ui,-apple-system,Segoe UI,Roboto; text-shadow:0 1px 2px rgba(0,0,0,.6);
+    font:600 32px system-ui,-apple-system,Segoe UI,Roboto; text-shadow:0 1px 2px rgba(0,0,0,.6);
   }
-  #hud small { display:block; font:500 14px system-ui,-apple-system,Segoe UI,Roboto; opacity:.9; }
+  #hud small { display:block; font:500 16px system-ui,-apple-system,Segoe UI,Roboto; opacity:.9; }
 </style>
 </head>
 <body>
@@ -139,10 +139,10 @@
 
   // ==== drawing helpers ====
   const CONNECTIONS = [
-    [11,13],[13,15],[12,14],[14,16], // arms
-    [11,12],[23,24],[11,23],[12,24], // torso
-    [23,25],[25,27],[27,29],[27,31], // left leg
-    [24,26],[26,28],[28,30],[28,32]  // right leg
+    [11,13],[13,15],[12,14],[14,16],
+    [11,12],[23,24],[11,23],[12,24],
+    [23,25],[25,27],[27,29],[27,31],
+    [24,26],[26,28],[28,30],[28,32]
   ];
   function drawConnectorsLocal(ctx, lm, connections, opt={}) {
     const color = opt.color || '#00FF7F';
@@ -176,31 +176,33 @@
     ctx.restore();
   }
 
-  // smoothing + reps
+  // ==== smoothing + reps (130° target) ====
   const kBuf=[]; const aBuf=[]; const BUF=8;
   const smooth = (buf,v)=>{ buf.push(v); if(buf.length>BUF) buf.shift(); return buf.reduce((x,y)=>x+y,0)/buf.length; };
-  let reps=0, phase='up', at90Frames=0;
-  const K_STAND=160, K_90_MIN=86, K_90_MAX=94;
+
+  let reps=0, phase='up', atTargetFrames=0;
+  const K_STAND=160, K_TARGET_MIN=126, K_TARGET_MAX=134;
+
   function updateReps(kneeAngle){
-    if (kneeAngle>=K_90_MIN && kneeAngle<=K_90_MAX) {
-      if (phase!=='at90') at90Frames=0;
-      phase='at90'; at90Frames++;
-    } else if (kneeAngle < K_90_MIN) {
-      phase='down'; at90Frames=0;
-    } else if (kneeAngle > K_90_MAX) {
-      if ((phase==='at90'||phase==='down') && at90Frames>=5 && kneeAngle>(K_STAND-5)) {
+    if (kneeAngle>=K_TARGET_MIN && kneeAngle<=K_TARGET_MAX) {
+      if (phase!=='atTarget') atTargetFrames=0;
+      phase='atTarget'; atTargetFrames++;
+    } else if (kneeAngle < K_TARGET_MIN) {
+      phase='down'; atTargetFrames=0;
+    } else if (kneeAngle > K_TARGET_MAX) {
+      if ((phase==='atTarget'||phase==='down') && atTargetFrames>=5 && kneeAngle>(K_STAND-5)) {
         reps++; repsEl.textContent = reps; beep();
       }
-      phase='up'; at90Frames=0;
+      phase='up'; atTargetFrames=0;
     }
   }
 
   function badge(text,x,y){
-    ctx.font='bold 20px system-ui,-apple-system,Segoe UI,Roboto';
+    ctx.font='bold 24px system-ui,-apple-system,Segoe UI,Roboto';
     const w=ctx.measureText(text).width+16;
-    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(x,y-24,w,28);
-    ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2; ctx.strokeRect(x,y-24,w,28);
-    ctx.fillStyle='#fff'; ctx.fillText(text,x+8,y-5);
+    ctx.fillStyle='rgba(0,0,0,.55)'; ctx.fillRect(x,y-28,w,32);
+    ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2; ctx.strokeRect(x,y-28,w,32);
+    ctx.fillStyle='#fff'; ctx.fillText(text,x+8,y-6);
   }
 
   // ==== main loop ====
@@ -231,16 +233,16 @@
       const chairY=(pKnee.y+pKneeO.y)/2;
       ctx.setLineDash([10,10]); ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.7)';
       ctx.beginPath(); ctx.moveTo(0,chairY); ctx.lineTo(W,chairY); ctx.stroke(); ctx.setLineDash([]);
-      ctx.font='16px system-ui,-apple-system,Segoe UI,Roboto'; ctx.fillStyle='rgba(255,255,255,.9)';
-      ctx.fillText('Target: hips down to this line (≈90°)',16,Math.max(22,chairY-8));
+      ctx.font='18px system-ui,-apple-system,Segoe UI,Roboto'; ctx.fillStyle='rgba(255,255,255,.9)';
+      ctx.fillText('Target: hips down to this line (≈130°)',16,Math.max(22,chairY-8));
 
       badge(`${Math.round(kneeAngle)}° knee`,pKnee.x+14,pKnee.y-12);
       badge(`${Math.round(ankleAngle)}° ankle`,pAnk.x+14,pAnk.y-12);
 
       const barH=H*0.6, barW=10, barX=W-28, barY=(H-barH)/2;
       ctx.fillStyle='rgba(255,255,255,.2)'; ctx.fillRect(barX,barY,barW,barH);
-      const y90=barY+((180-90)/90)*barH;
-      ctx.fillStyle='#fff'; ctx.fillRect(barX-6,y90-2,barW+12,4);
+      const y130=barY+((180-130)/90)*barH;
+      ctx.fillStyle='#fff'; ctx.fillRect(barX-6,y130-2,barW+12,4);
       const kClamp=Math.max(90,Math.min(180,kneeAngle));
       const yNow=barY+((180-kClamp)/90)*barH;
       ctx.fillStyle='#00ffc8'; ctx.fillRect(barX-2,yNow-3,barW+4,6);
@@ -250,19 +252,19 @@
 
       let msg='',color='#fff';
       if (kneeAngle>=K_STAND){ msg='Start: go down slowly'; color='#fff'; }
-      else if (kneeAngle>94){ msg='Lower… aim for 90°'; color='#ffeb3b'; }
-      else if (kneeAngle>=86){ msg='Perfect 90° — hold briefly'; color='#00ffc8'; }
+      else if (kneeAngle>K_TARGET_MAX){ msg='Lower… aim for 130°'; color='#ffeb3b'; }
+      else if (kneeAngle>=K_TARGET_MIN){ msg='Perfect 130° — hold briefly'; color='#00ffc8'; }
       else { msg='Too deep — rise a bit'; color='#ff7676'; }
-      ctx.font='600 28px system-ui,-apple-system,Segoe UI,Roboto'; ctx.textAlign='center';
-      ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(W/2-260,24,520,46);
-      ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2; ctx.strokeRect(W/2-260,24,520,46);
-      ctx.fillStyle=color; ctx.fillText(msg,W/2,56);
+      ctx.font='600 32px system-ui,-apple-system,Segoe UI,Roboto'; ctx.textAlign='center';
+      ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(W/2-300,24,600,50);
+      ctx.strokeStyle='rgba(255,255,255,.85)'; ctx.lineWidth=2; ctx.strokeRect(W/2-300,24,600,50);
+      ctx.fillStyle=color; ctx.fillText(msg,W/2,60);
 
       updateReps(kneeAngle);
     } else {
       noLandmarkFrames++;
       if (noLandmarkFrames>15){
-        ctx.font='600 20px system-ui,-apple-system,Segoe UI,Roboto'; ctx.fillStyle='rgba(255,255,255,.9)';
+        ctx.font='600 22px system-ui,-apple-system,Segoe UI,Roboto'; ctx.fillStyle='rgba(255,255,255,.9)';
         ctx.textAlign='center'; ctx.fillText('Step back so hips/knees/ankles/feet are visible',W/2,40);
       }
     }
