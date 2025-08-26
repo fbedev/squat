@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, maximum-scale=1" />
-<title>Squat 90° — Angles + Reps</title>
+<title>Squat 90° — Skeleton + Angles + Reps</title>
 <style>
   html, body { margin:0; height:100%; background:#000; overflow:hidden; touch-action:none; -webkit-user-select:none; user-select:none; }
   #wrap { position:fixed; inset:0; }
@@ -19,8 +19,7 @@
   #mute { right:66px; }
   #hud {
     position:absolute; left:16px; bottom:16px; z-index:5; color:#fff;
-    font:600 28px system-ui,-apple-system,Segoe UI,Roboto;
-    text-shadow: 0 1px 2px rgba(0,0,0,.6);
+    font:600 28px system-ui,-apple-system,Segoe UI,Roboto; text-shadow:0 1px 2px rgba(0,0,0,.6);
   }
   #hud small { display:block; font:500 14px system-ui,-apple-system,Segoe UI,Roboto; opacity:.9; }
 </style>
@@ -34,7 +33,7 @@
     <div id="hud"><span id="reps">0</span><small>reps</small></div>
   </div>
 
-  <!-- MediaPipe (classic solutions) -->
+  <!-- MediaPipe classic (Pose + drawing utils) -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675469404/camera_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675469404/drawing_utils.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js"></script>
@@ -62,7 +61,7 @@
     const re = facing==='environment' ? /(back|rear|environment)/i : /(front|user|face)/i;
     const m = cams.find(c=>re.test(c.label));
     if (m) return m.deviceId;
-    return facing==='environment' ? (cams[cams.length-1]?.deviceId ?? cams[0].deviceId)
+    return facing==='environment' ? (cams[cams.length-1]?.deviceId ?? cams[0]?.deviceId)
                                   : (cams[0]?.deviceId ?? null);
   }
   async function initCamera(facing='environment'){
@@ -81,11 +80,10 @@
     }
     currentStream = stream; video.srcObject = stream;
     await video.play().catch(()=>{});
+    // mirror preview for front camera
     video.style.transform = (currentFacing==='user') ? 'scaleX(-1)' : 'none';
   }
-  async function flipCamera(){
-    await initCamera(currentFacing==='environment' ? 'user' : 'environment');
-  }
+  async function flipCamera(){ await initCamera(currentFacing==='environment' ? 'user' : 'environment'); }
   flipBtn.onclick = flipCamera;
   document.addEventListener('keydown', e => { if(e.key.toLowerCase()==='f') flipCamera(); });
 
@@ -100,22 +98,16 @@
     if(!beepOn) return;
     ensureAudio();
     const o = audioCtx.createOscillator(), g = audioCtx.createGain();
-    o.type = 'sine'; o.frequency.value = 880; // A5
-    g.gain.value = 0.001; // soft
+    o.type='sine'; o.frequency.value=880; g.gain.value=0.001;
     o.connect(g); g.connect(audioCtx.destination);
     o.start();
-    g.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime + 0.15);
-    o.stop(audioCtx.currentTime + 0.16);
+    g.gain.exponentialRampToValueAtTime(0.00001, audioCtx.currentTime+0.15);
+    o.stop(audioCtx.currentTime+0.16);
   }
-  muteBtn.onclick = () => {
-    beepOn = !beepOn;
-    muteBtn.textContent = beepOn ? '🔈' : '🔇';
-  };
+  muteBtn.onclick = () => { beepOn = !beepOn; muteBtn.textContent = beepOn ? '🔈' : '🔇'; };
 
   // MediaPipe Pose
-  const pose = new Pose.Pose({
-    locateFile: (f) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}`
-  });
+  const pose = new Pose.Pose({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${f}` });
   pose.setOptions({
     modelComplexity: 1,
     smoothLandmarks: true,
@@ -124,14 +116,15 @@
     minTrackingConfidence: 0.5
   });
 
-  let last = null;
+  let last = null, noLandmarkFrames = 0;
   pose.onResults(r => { last = r; });
 
   // helpers
-  const lerp = (a,b,t)=>a+(b-a)*t;
-  function toPx(p,W,H){
-    const xNorm = (currentFacing==='user') ? (1 - p.x) : p.x; // mirror overlays with front cam
-    return { x:xNorm*W, y:p.y*H };
+  function cloneAndMirrorIfNeeded(lm){
+    // MediaPipe outputs normalized [0..1]. If front camera, mirror x so overlays match.
+    if (currentFacing !== 'user') return lm;
+    const out = lm.map(p => ({...p, x: 1 - p.x}));
+    return out;
   }
   function angleAt(B,A,C){
     const bax=A.x-B.x, bay=A.y-B.y; const bcx=C.x-B.x, bcy=C.y-B.y;
@@ -141,7 +134,7 @@
     return Math.acos(cos)*180/Math.PI;
   }
   function sidePick(lm){
-    const L=[23,25,27], R=[24,26,28];
+    const L=[23,25,27,31], R=[24,26,28,32];
     const sum = ids => ids.map(i=>lm[i]?.visibility??0).reduce((a,b)=>a+b,0);
     return sum(L) >= sum(R) ? 'L' : 'R';
   }
@@ -150,40 +143,30 @@
       ? {hip:lm[23], knee:lm[25], ankle:lm[27], heel:lm[29], foot:lm[31], kneeOther:lm[26]}
       : {hip:lm[24], knee:lm[26], ankle:lm[28], heel:lm[30], foot:lm[32], kneeOther:lm[25]};
   }
+  function toPx(p,W,H){ return { x:p.x*W, y:p.y*H }; }
 
   // smoothing
   const kBuf=[]; const aBuf=[]; const BUF=8;
-  const smoothK = v => { kBuf.push(v); if(kBuf.length>BUF) kBuf.shift(); return kBuf.reduce((x,y)=>x+y,0)/kBuf.length; };
-  const smoothA = v => { aBuf.push(v); if(aBuf.length>BUF) aBuf.shift(); return aBuf.reduce((x,y)=>x+y,0)/aBuf.length; };
+  const smooth = (buf,v)=>{ buf.push(v); if(buf.length>BUF) buf.shift(); return buf.reduce((x,y)=>x+y,0)/buf.length; };
 
-  // rep counter (state machine)
-  let reps=0, phase='up'; // 'up'|'down'|'at90'
-  let at90Frames=0;
-
-  const K_STAND=160;      // knee angle considered standing
-  const K_DOWN=110;       // below this => considered 'down'
-  const K_90_MIN=86, K_90_MAX=94; // 90° window
-
+  // rep counter
+  let reps=0, phase='up', at90Frames=0;
+  const K_STAND=160, K_90_MIN=86, K_90_MAX=94;
   function updateReps(kneeAngle){
-    // entering the 90 window
     if (kneeAngle>=K_90_MIN && kneeAngle<=K_90_MAX) {
       if (phase!=='at90') at90Frames=0;
       phase='at90'; at90Frames++;
     } else if (kneeAngle < K_90_MIN) {
       phase='down'; at90Frames=0;
     } else if (kneeAngle > K_90_MAX) {
-      // if just left 90 window going up and previously deep enough => count
-      if (phase==='at90' || phase==='down') {
-        // confirm we actually hit the window for a few frames to avoid false reps
-        if (at90Frames >= 5 && kneeAngle > K_STAND-5) {
-          reps++; repsEl.textContent = reps; beep();
-        }
+      if ((phase==='at90' || phase==='down') && at90Frames>=5 && kneeAngle > (K_STAND-5)) {
+        reps++; repsEl.textContent = reps; beep();
       }
       phase='up'; at90Frames=0;
     }
   }
 
-  // draw badge
+  // badges
   function badge(text, x, y){
     ctx.font='bold 20px system-ui,-apple-system,Segoe UI,Roboto';
     const w = ctx.measureText(text).width + 16;
@@ -200,23 +183,35 @@
     ctx.clearRect(0,0,W,H);
 
     if (last?.poseLandmarks) {
-      const lm = last.poseLandmarks;
+      noLandmarkFrames = 0;
+
+      // mirror landmarks for front camera so drawing_utils matches the preview
+      const lm = cloneAndMirrorIfNeeded(last.poseLandmarks);
+
+      // 1) draw FULL SKELETON
+      drawConnectors(ctx, lm, Pose.POSE_CONNECTIONS, { color:'#00FF7F', lineWidth:3 });
+      drawLandmarks(ctx, lm, { color:'#FFFFFF', lineWidth:1, radius:2 });
+
+      // 2) highlight the working leg and compute angles
       const side = sidePick(lm);
       const L = legLm(lm, side);
-
-      // px coords
       const pHip = toPx(L.hip,W,H), pKnee = toPx(L.knee,W,H), pAnk = toPx(L.ankle,W,H);
-      const pHeel = L.heel ? toPx(L.heel,W,H) : pAnk;
       const pFoot = L.foot ? toPx(L.foot,W,H) : pAnk;
       const pKneeO = L.kneeOther ? toPx(L.kneeOther,W,H) : pKnee;
 
-      // angles
-      let kneeAngle = angleAt({x:L.knee.x,y:L.knee.y},{x:L.hip.x,y:L.hip.y},{x:L.ankle.x,y:L.ankle.y});
-      let ankleAngle = angleAt({x:L.ankle.x,y:L.ankle.y},{x:L.knee.x,y:L.knee.y},{x:(L.foot?.x ?? L.heel?.x ?? L.ankle.x), y:(L.foot?.y ?? L.heel?.y ?? L.ankle.y)});
-      kneeAngle = smoothK(kneeAngle);
-      ankleAngle = smoothA(ankleAngle);
+      // emphasized leg polyline
+      ctx.lineWidth=6; ctx.strokeStyle='rgba(0,255,180,.95)';
+      ctx.beginPath(); ctx.moveTo(pHip.x,pHip.y); ctx.lineTo(pKnee.x,pKnee.y); ctx.lineTo(pAnk.x,pAnk.y); ctx.lineTo(pFoot.x,pFoot.y); ctx.stroke();
+      [pHip,pKnee,pAnk,pFoot].forEach(pt=>{ ctx.beginPath(); ctx.arc(pt.x,pt.y,6,0,Math.PI*2); ctx.fillStyle='#00ffc8'; ctx.fill(); });
 
-      // “chair line” at knee height
+      // knee + ankle angles (use normalized coords for math)
+      let kneeAngle = angleAt(L.knee, L.hip, L.ankle);
+      let ankleRef = (L.foot ?? L.heel ?? L.ankle);
+      let ankleAngle = angleAt(L.ankle, L.knee, ankleRef);
+      kneeAngle = smooth(kBuf, kneeAngle);
+      ankleAngle = smooth(aBuf, ankleAngle);
+
+      // “chair line” = average knee height
       const chairY = (pKnee.y + pKneeO.y)/2;
       ctx.setLineDash([10,10]); ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.7)';
       ctx.beginPath(); ctx.moveTo(0, chairY); ctx.lineTo(W, chairY); ctx.stroke();
@@ -225,19 +220,11 @@
       ctx.fillStyle='rgba(255,255,255,.9)';
       ctx.fillText('Target: hips down to this line (≈ 90°)', 16, Math.max(22, chairY-8));
 
-      // draw leg polyline hip→knee→ankle→foot
-      ctx.lineWidth=6; ctx.strokeStyle='rgba(0,255,180,.9)';
-      ctx.beginPath();
-      ctx.moveTo(pHip.x,pHip.y); ctx.lineTo(pKnee.x,pKnee.y); ctx.lineTo(pAnk.x,pAnk.y);
-      ctx.lineTo(pFoot.x,pFoot.y); ctx.stroke();
-      [pHip,pKnee,pAnk,pFoot].forEach(pt=>{ ctx.beginPath(); ctx.arc(pt.x,pt.y,6,0,Math.PI*2); ctx.fillStyle='#00ffc8'; ctx.fill(); });
-
-      // knee angle badge
+      // angle badges
       badge(`${Math.round(kneeAngle)}° knee`, pKnee.x + 14, pKnee.y - 12);
-      // ankle/“shoe” angle badge
       badge(`${Math.round(ankleAngle)}° ankle`, pAnk.x + 14, pAnk.y - 12);
 
-      // side progress bar to visualize knee angle (180→90)
+      // side progress bar for knee angle
       const barH=H*0.6, barW=10, barX=W-28, barY=(H-barH)/2;
       ctx.fillStyle='rgba(255,255,255,.2)'; ctx.fillRect(barX,barY,barW,barH);
       const y90 = barY + ((180-90)/90)*barH;
@@ -253,8 +240,8 @@
       // coaching text
       let msg='', color='#fff';
       if (kneeAngle >= K_STAND) { msg='Start: go down slowly'; color='#fff'; }
-      else if (kneeAngle > K_90_MAX) { msg='Lower… aim for 90°'; color='#ffeb3b'; }
-      else if (kneeAngle >= K_90_MIN && kneeAngle <= K_90_MAX) { msg='Perfect 90° — hold briefly'; color='#00ffc8'; }
+      else if (kneeAngle > 94) { msg='Lower… aim for 90°'; color='#ffeb3b'; }
+      else if (kneeAngle >= 86) { msg='Perfect 90° — hold briefly'; color='#00ffc8'; }
       else { msg='Too deep — rise a bit'; color='#ff7676'; }
       ctx.font='600 28px system-ui,-apple-system,Segoe UI,Roboto';
       ctx.textAlign='center';
@@ -264,6 +251,14 @@
 
       // update reps
       updateReps(kneeAngle);
+    } else {
+      noLandmarkFrames++;
+      if (noLandmarkFrames > 15) {
+        ctx.font='600 20px system-ui,-apple-system,Segoe UI,Roboto';
+        ctx.fillStyle='rgba(255,255,255,.9)';
+        ctx.textAlign='center';
+        ctx.fillText('Move back; make sure hips/knees/ankles/feet are visible', canvas.width/2, 40);
+      }
     }
 
     requestAnimationFrame(tick);
